@@ -1,119 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Global Business Lead Extractor</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Pain & Intent Lead Scanner</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 25px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { font-size: 1.8rem; color: #38bdf8; margin-bottom: 10px; }
+        p { color: #94a3b8; margin-bottom: 30px; line-height: 1.5; }
+        .btn { background: #0284c7; color: white; border: none; padding: 14px 28px; font-size: 1.05rem; font-weight: bold; border-radius: 8px; cursor: pointer; text-decoration: none; display: inline-block; transition: background 0.2s; }
+        .btn:hover { background: #0369a1; }
+    </style>
 </head>
-<body class="bg-slate-950 text-slate-100 font-sans min-h-screen p-4 sm:p-6">
-  <div class="max-w-4xl mx-auto space-y-6">
-
-    <!-- Header -->
-    <header class="flex justify-between items-center border-b border-slate-800 pb-4">
-      <div>
-        <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-emerald-400">LeadExtractor Pro</h1>
-        <p class="text-xs sm:text-sm text-slate-400">Global B2B Client Discovery Engine</p>
-      </div>
-      <span class="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold rounded-full">ONLINE</span>
-    </header>
-
-    <!-- Search Controls Card -->
-    <div class="bg-slate-900 border border-slate-800 p-4 sm:p-6 rounded-xl space-y-4">
-      <h2 class="font-semibold text-sm text-slate-200">Target Search Parameters</h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Industry / Niche</label>
-          <input id="niche-input" type="text" value="Software Agency" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1">Target Location</label>
-          <input id="location-input" type="text" value="Dubai" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-500">
-        </div>
-      </div>
-      <button onclick="executeSearch()" id="search-btn" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-sm rounded-lg transition-all cursor-pointer">
-        Extract Verified Leads
-      </button>
+<body>
+    <div class="container">
+        <h1>🔥 Global Pain & Intent Lead Scanner</h1>
+        <p>Click below to instantly scan global networks for people experiencing urgent spreadsheet, data, or automation pain.</p>
+        
+        <a href="/api/scan" class="btn">⚡ Run Live Global Scan Now</a>
     </div>
-
-    <!-- Results Status Bar -->
-    <div class="flex justify-between items-center text-xs text-slate-400 px-1">
-      <span id="status-text">Ready for extraction query.</span>
-      <span id="results-count">0 leads found</span>
-    </div>
-
-    <!-- Results Table -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm text-slate-300">
-          <thead class="bg-slate-950/50 text-slate-400 uppercase text-xs">
-            <tr>
-              <th class="p-4">Company</th>
-              <th class="p-4">Contact Email</th>
-              <th class="p-4">Score</th>
-              <th class="p-4 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody id="table-body" class="divide-y divide-slate-800">
-            <tr>
-              <td colspan="4" class="p-4 text-center text-slate-500">Enter parameters above and tap extract.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-  </div>
-
-  <script>
-    async function executeSearch() {
-      const niche = document.getElementById('niche-input').value.trim() || 'Business';
-      const location = document.getElementById('location-input').value.trim() || 'Global';
-      const statusText = document.getElementById('status-text');
-      const searchBtn = document.getElementById('search-btn');
-      const tableBody = document.getElementById('table-body');
-      
-      statusText.textContent = `Extracting verified leads for ${niche} in ${location}...`;
-      searchBtn.disabled = true;
-      searchBtn.classList.add('opacity-50');
-
-      try {
-        const response = await fetch(`/api/leads?niche=${encodeURIComponent(niche)}&location=${encodeURIComponent(location)}`);
-        const data = await response.json();
-
-        if (data.status === 'success') {
-          document.getElementById('results-count').textContent = `${data.total_extracted} leads extracted`;
-          statusText.textContent = `Successfully fetched live results for ${location}.`;
-          
-          tableBody.innerHTML = data.leads.map(lead => `
-            <tr class="hover:bg-slate-800/50">
-              <td class="p-4 font-medium text-slate-100">${lead.company}<br><span class="text-xs text-slate-500">${lead.location}</span></td>
-              <td class="p-4 text-slate-400 text-xs sm:text-sm">${lead.contact}</td>
-              <td class="p-4 text-emerald-400 font-semibold">${lead.score}</td>
-              <td class="p-4 text-right">
-                <button onclick="copyScript('${lead.company}', '${lead.contact}')" class="px-3 py-1.5 bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-semibold rounded transition-all cursor-pointer">
-                  Copy Pitch
-                </button>
-              </td>
-            </tr>
-          `).join('');
-        }
-      } catch (error) {
-        statusText.textContent = "Extraction failed. Please check connection.";
-        console.error(error);
-      } finally {
-        searchBtn.disabled = false;
-        searchBtn.classList.remove('opacity-50');
-      }
-    }
-
-    function copyScript(company, contact) {
-      const script = `Subject: Partnership opportunity with ${company}\n\nHi team at ${company},\n\nI came across your operations and noticed an opportunity to scale your client acquisition channels using automated systems.\n\nAre you open to reviewing a quick case study on how we streamline outreach?\n\nBest regards,\nGrowth Team`;
-      
-      navigator.clipboard.writeText(script).then(() => {
-        alert(`Pitch copied for ${company} (${contact})!\nReady to paste into email.`);
-      });
-    }
-  </script>
 </body>
 </html>
