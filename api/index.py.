@@ -61,52 +61,57 @@ def process_single_pdf(
         raise ValueError("Invalid file header. Not a genuine PDF.")
 
     all_tables = []
-    
-    # FAST EXTRACTION SETTINGS: Prevent Vercel timeout by using text-based strategy
-    table_settings = {
-        "vertical_strategy": "text",
-        "horizontal_strategy": "text",
-        "snap_tolerance": 3,
-        "join_tolerance": 3
-    }
-    
-    if engine_mode == "advanced":
-        table_settings = {
-            "vertical_strategy": "lines",
-            "horizontal_strategy": "lines",
-            "snap_tolerance": 4,
-        }
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         if len(pdf.pages) == 0:
             raise ValueError("PDF contains zero pages.")
 
         for page in pdf.pages:
-            tables = page.extract_tables(table_settings=table_settings)
-            for table in tables:
-                if not table:
-                    continue
-                df = pd.DataFrame(table)
-                if remove_empty:
-                    df.replace(r'^\s*$', pd.NA, regex=True, inplace=True)
-                    df.dropna(how='all', axis=0, inplace=True)
-                    df.dropna(how='all', axis=1, inplace=True)
-                if not df.empty:
-                    all_tables.append(df)
-
-    if not all_tables:
-        # Fallback to default extraction if text strategy finds nothing
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            for page in pdf.pages:
-                tables = page.extract_tables()
+            # 1. Try standard pdfplumber table extraction first with a fast timeout/tolerance
+            try:
+                tables = page.extract_tables({
+                    "vertical_strategy": "text",
+                    "horizontal_strategy": "text",
+                    "snap_tolerance": 3
+                })
                 for table in tables:
                     if table:
                         df = pd.DataFrame(table)
                         if not df.empty:
                             all_tables.append(df)
+            except Exception:
+                pass
+
+            # 2. Ultra-fast fallback: If tables weren't caught, parse text lines/columns instantly
+            if not all_tables:
+                text = page.extract_text()
+                if text:
+                    lines = text.split("\n")
+                    parsed_rows = []
+                    for line in lines:
+                        # Split columns by multiple spaces or tabs
+                        cols = [c.strip() for c in re.split(r'\s{2,}|\t+', line) if c.strip()]
+                        if cols:
+                            parsed_rows.append(cols)
+                    if parsed_rows:
+                        df = pd.DataFrame(parsed_rows)
+                        all_tables.append(df)
 
     if not all_tables:
         raise ValueError("No tabular data detected in this PDF.")
+
+    # Clean empty rows/columns if requested
+    cleaned_tables = []
+    for df in all_tables:
+        if remove_empty:
+            df.replace(r'^\s*$', pd.NA, regex=True, inplace=True)
+            df.dropna(how='all', axis=0, inplace=True)
+            df.dropna(how='all', axis=1, inplace=True)
+        if not df.empty:
+            cleaned_tables.append(df)
+
+    if not cleaned_tables:
+        raise ValueError("No tabular data detected after cleaning.")
 
     excel_buffer = io.BytesIO()
     preview_rows = []
@@ -115,7 +120,7 @@ def process_single_pdf(
 
     with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
         if merge_pages:
-            merged_df = pd.concat(all_tables, ignore_index=True)
+            merged_df = pd.concat(cleaned_tables, ignore_index=True)
             if detect_headers and len(merged_df) > 1:
                 merged_df.columns = make_unique_headers(merged_df.iloc[0], pd)
                 merged_df = merged_df[1:].reset_index(drop=True)
@@ -129,7 +134,7 @@ def process_single_pdf(
             for row in preview_df.values.tolist():
                 preview_rows.append([str(cell) for cell in row])
         else:
-            for idx, df in enumerate(all_tables):
+            for idx, df in enumerate(cleaned_tables):
                 if detect_headers and len(df) > 1:
                     df.columns = make_unique_headers(df.iloc[0], pd)
                     df = df[1:].reset_index(drop=True)
