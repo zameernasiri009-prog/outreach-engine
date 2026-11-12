@@ -71,3 +71,17 @@
     </div>
 </body>
 </html>
+<script>
+  async function fetchLeadsData() {
+    try {
+      const response = await fetch('/api/leads');
+      const data = await response.json();
+      if (data.status === 'success') {
+        console.log('Backend Python API Connected Successfully:', data);
+      }
+    } catch (error) {
+      console.error('Error connecting to Python backend:', error);
+    }
+  }
+  fetchLeadsData();
+</script>
