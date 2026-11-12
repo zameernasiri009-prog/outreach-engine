@@ -1,7 +1,4 @@
-# lead_engine_core.py
-# Step 1: Cloud-Ready Data Architecture & Pipeline Manager
 
-name: Cloud Intent Scanner Check
 
 on:
   schedule:
