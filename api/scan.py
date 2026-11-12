@@ -9,7 +9,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
-        # Global public intent feeds
         feeds = [
             "https://www.reddit.com/r/forhire/new/.rss",
             "https://www.reddit.com/r/freelance_forhire/new/.rss",
@@ -19,16 +18,13 @@ class handler(BaseHTTPRequestHandler):
         pain_leads = []
         current_time = datetime.now(timezone.utc)
         
-        # High-intent pain keywords targeting lucrative small scripts and automation
-        pain_keywords = ["need", "script", "python", "automate", "spreadsheet", "data", "fix", "error", "bot", "web scraper", "app", "excel"]
-        
-        # Neutral browser headers for total anonymity
-        req_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        pain_keywords = ["need", "script", "python", "automate", "spreadsheet", "data", "fix", "error", "bot", "web scraper", "app", "excel", "sheet", "work"]
+        req_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
         for feed_url in feeds:
             try:
                 req = urllib.request.Request(feed_url, headers=req_headers)
-                with urllib.request.urlopen(req, timeout=4) as response:
+                with urllib.request.urlopen(req, timeout=5) as response:
                     xml_data = response.read()
                     
                 root = ET.fromstring(xml_data)
@@ -51,8 +47,8 @@ class handler(BaseHTTPRequestHandler):
                         time_diff = current_time - post_time
                         minutes_ago = int(time_diff.total_seconds() / 60)
                         
-                        # Filter for fresh leads under 60 minutes with core pain triggers
-                        if minutes_ago <= 60 and any(kw in title.lower() for kw in pain_keywords):
+                        # Widened to 24 hours (1440 mins) so you see active leads immediately
+                        if minutes_ago <= 1440 and any(kw in title.lower() for kw in pain_keywords):
                             pain_leads.append({
                                 "title": title,
                                 "link": link,
@@ -62,7 +58,6 @@ class handler(BaseHTTPRequestHandler):
             except Exception:
                 continue
 
-        # Render the high-converting results page
         results_html = f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -96,7 +91,7 @@ class handler(BaseHTTPRequestHandler):
                 </div>
                 """
         else:
-            results_html += "<p style='color: #94a3b8; margin-top: 20px;'>No critical pain points detected right this second. Head back and scan again shortly!</p>"
+            results_html += "<p style='color: #94a3b8; margin-top: 20px;'>No results found right now. Check back shortly!</p>"
             
         results_html += "</div></body></html>"
         
