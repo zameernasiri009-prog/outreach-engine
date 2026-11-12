@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Automation & Lead Matrix</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen p-6">
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- Header Section -->
+        <header class="flex justify-between items-center border-b border-slate-800 pb-4">
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight text-emerald-400">Autonomous Outreach Engine</h1>
+                <p class="text-sm text-slate-400">Enterprise Workspace: ws_enterprise_01</p>
+            </div>
+            <span class="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold rounded-full">SYSTEM ACTIVE</span>
+        </header>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                <p class="text-xs text-slate-400 uppercase tracking-wider">Qualified Leads</p>
+                <h3 class="text-3xl font-bold mt-1 text-slate-100">1,428</h3>
+                <span class="text-xs text-emerald-400 font-medium mt-2 inline-block">+12.4% conversion rate</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                <p class="text-xs text-slate-400 uppercase tracking-wider">Active Pipelines</p>
+                <h3 class="text-3xl font-bold mt-1 text-slate-100">24</h3>
+                <span class="text-xs text-blue-400 font-medium mt-2 inline-block">All systems operational</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
+                <p class="text-xs text-slate-400 uppercase tracking-wider">Estimated Pipeline Value</p>
+                <h3 class="text-3xl font-bold mt-1 text-emerald-400">$48,500</h3>
+                <span class="text-xs text-slate-400 mt-2 inline-block">High-ticket valuation</span>
+            </div>
+        </div>
+
+        <!-- Live Pipeline Table -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+            <div class="p-4 border-b border-slate-800 font-semibold text-sm">Active Enterprise Leads</div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-300">
+                    <thead class="bg-slate-950/50 text-slate-400 uppercase text-xs">
+                        <tr>
+                            <th class="p-4">Company</th>
+                            <th class="p-4">Contact</th>
+                            <th class="p-4">Score</th>
+                            <th class="p-4">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800">
+                        <tr class="hover:bg-slate-800/50">
+                            <td class="p-4 font-medium text-slate-100">Apex Digital Agency</td>
+                            <td class="p-4 text-slate-400">contact@apexdigital.io</td>
+                            <td class="p-4 text-emerald-400 font-semibold">92 / 100</td>
+                            <td class="p-4"><span class="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-xs rounded">QUALIFIED</span></td>
+                        </tr>
+                        <tr class="hover:bg-slate-800/50">
+                            <td class="p-4 font-medium text-slate-100">Vanguard Scale Co.</td>
+                            <td class="p-4 text-slate-400">growth@vanguardscale.com</td>
+                            <td class="p-4 text-emerald-400 font-semibold">88 / 100</td>
+                            <td class="p-4"><span class="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-xs rounded">QUALIFIED</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
