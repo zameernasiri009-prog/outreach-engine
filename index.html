@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Enterprise Automation & Lead Matrix</title>
+  <title>Autonomous Outreach Engine</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen p-6">
@@ -24,7 +24,7 @@
         <h2 class="font-semibold text-sm">Engine Controls</h2>
         <p id="scan-status" class="text-xs text-slate-400">Trigger real-time crypto & P2P prospect scraping.</p>
       </div>
-      <button onclick="triggerOutreach()" id="scan-btn" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs rounded-lg transition-all">
+      <button onclick="triggerOutreach()" id="scan-btn" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs rounded-lg transition-all cursor-pointer">
         Run Outreach Scan
       </button>
     </div>
@@ -50,7 +50,10 @@
 
     <!-- Live Pipeline Table -->
     <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-      <div class="p-4 border-b border-slate-800 font-semibold text-sm">Active Enterprise Leads</div>
+      <div class="p-4 border-b border-slate-800 font-semibold text-sm flex justify-between items-center">
+        <span>Active Enterprise Leads</span>
+        <span class="text-xs text-slate-400">Tap copy to grab high-ticket script</span>
+      </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm text-slate-300">
           <thead class="bg-slate-950/50 text-slate-400 uppercase text-xs">
@@ -59,11 +62,12 @@
               <th class="p-4">Contact</th>
               <th class="p-4">Score</th>
               <th class="p-4">Status</th>
+              <th class="p-4 text-right">Action</th>
             </tr>
           </thead>
           <tbody id="leads-table-body" class="divide-y divide-slate-800">
             <tr>
-              <td colspan="4" class="p-4 text-center text-slate-500">Syncing live leads from Python backend...</td>
+              <td colspan="5" class="p-4 text-center text-slate-500">Syncing live leads from Python backend...</td>
             </tr>
           </tbody>
         </table>
@@ -96,14 +100,29 @@
 
     function renderTable() {
       const tableBody = document.getElementById('leads-table-body');
-      tableBody.innerHTML = cachedLeads.map(lead => `
+      tableBody.innerHTML = cachedLeads.map((lead) => `
         <tr class="hover:bg-slate-800/50">
           <td class="p-4 font-medium text-slate-100">${lead.company}</td>
           <td class="p-4 text-slate-400">${lead.contact}</td>
           <td class="p-4 text-emerald-400 font-semibold">${lead.score}</td>
           <td class="p-4"><span class="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-xs rounded">${lead.status}</span></td>
+          <td class="p-4 text-right">
+            <button onclick="copyOutreachScript('${lead.company}', '${lead.contact}')" class="px-3 py-1.5 bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-xs font-semibold rounded transition-all cursor-pointer">
+              Copy Script
+            </button>
+          </td>
         </tr>
       `).join('');
+    }
+
+    function copyOutreachScript(company, contact) {
+      const script = `Subject: High-volume partnership inquiry for ${company}\n\nHi team at ${company},\n\nI run an enterprise liquidity and high-ticket outreach network. We have pre-filtered verified buyers actively looking for OTC and crypto volume right now.\n\nAre you open to reviewing a sample of 3 qualified buyer prospects this week?\n\nBest regards,\nGrowth Team`;
+      
+      navigator.clipboard.writeText(script).then(() => {
+        alert(`Outreach script copied for ${company}!\nReady to paste into email or Telegram.`);
+      }).catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
     }
 
     async function triggerOutreach() {
@@ -119,11 +138,9 @@
         const data = await response.json();
 
         if (data.status === 'success') {
-          // Add the new python-scanned lead to the top of our list
           cachedLeads.unshift(data.new_lead);
           renderTable();
 
-          // Update metrics live
           document.getElementById('metric-leads').textContent = data.metrics.qualified_leads.toLocaleString();
           document.getElementById('metric-pipelines').textContent = data.metrics.active_pipelines;
           document.getElementById('metric-valuation').textContent = data.metrics.pipeline_valuation;
