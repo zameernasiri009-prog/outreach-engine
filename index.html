@@ -22,9 +22,9 @@
     <div class="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl">
       <div>
         <h2 class="font-semibold text-sm">Engine Controls</h2>
-        <p class="text-xs text-slate-400">Trigger real-time crypto & P2P prospect scraping.</p>
+        <p id="scan-status" class="text-xs text-slate-400">Trigger real-time crypto & P2P prospect scraping.</p>
       </div>
-      <button onclick="triggerOutreach()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs rounded-lg transition-all">
+      <button onclick="triggerOutreach()" id="scan-btn" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs rounded-lg transition-all">
         Run Outreach Scan
       </button>
     </div>
@@ -73,6 +73,8 @@
   </div>
 
   <script>
+    let cachedLeads = [];
+
     async function fetchLeadsData() {
       try {
         const response = await fetch('/api/leads');
@@ -84,23 +86,56 @@
           document.getElementById('metric-pipelines').textContent = data.metrics.active_pipelines;
           document.getElementById('metric-valuation').textContent = data.metrics.pipeline_valuation;
 
-          const tableBody = document.getElementById('leads-table-body');
-          tableBody.innerHTML = data.leads.map(lead => `
-            <tr class="hover:bg-slate-800/50">
-              <td class="p-4 font-medium text-slate-100">${lead.company}</td>
-              <td class="p-4 text-slate-400">${lead.contact}</td>
-              <td class="p-4 text-emerald-400 font-semibold">${lead.score}</td>
-              <td class="p-4"><span class="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-xs rounded">${lead.status}</span></td>
-            </tr>
-          `).join('');
+          cachedLeads = data.leads;
+          renderTable();
         }
       } catch (error) {
         console.error('Error connecting to Python backend:', error);
       }
     }
 
-    function triggerOutreach() {
-      alert('Autonomous Outreach Scan initiated! Scraping high-ticket P2P leads...');
+    function renderTable() {
+      const tableBody = document.getElementById('leads-table-body');
+      tableBody.innerHTML = cachedLeads.map(lead => `
+        <tr class="hover:bg-slate-800/50">
+          <td class="p-4 font-medium text-slate-100">${lead.company}</td>
+          <td class="p-4 text-slate-400">${lead.contact}</td>
+          <td class="p-4 text-emerald-400 font-semibold">${lead.score}</td>
+          <td class="p-4"><span class="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-xs rounded">${lead.status}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    async function triggerOutreach() {
+      const statusText = document.getElementById('scan-status');
+      const scanBtn = document.getElementById('scan-btn');
+      
+      statusText.textContent = "Scanning blockchain & P2P networks...";
+      scanBtn.disabled = true;
+      scanBtn.classList.add('opacity-50');
+
+      try {
+        const response = await fetch('/api/leads', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+          // Add the new python-scanned lead to the top of our list
+          cachedLeads.unshift(data.new_lead);
+          renderTable();
+
+          // Update metrics live
+          document.getElementById('metric-leads').textContent = data.metrics.qualified_leads.toLocaleString();
+          document.getElementById('metric-pipelines').textContent = data.metrics.active_pipelines;
+          document.getElementById('metric-valuation').textContent = data.metrics.pipeline_valuation;
+
+          statusText.textContent = data.message;
+        }
+      } catch (error) {
+        statusText.textContent = "Scan failed. Try again.";
+      } finally {
+        scanBtn.disabled = false;
+        scanBtn.classList.remove('opacity-50');
+      }
     }
 
     fetchLeadsData();
