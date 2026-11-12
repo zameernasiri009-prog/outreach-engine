@@ -18,6 +18,17 @@
       <span class="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold rounded-full">SYSTEM ACTIVE</span>
     </header>
 
+    <!-- Action Trigger Control -->
+    <div class="flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl">
+      <div>
+        <h2 class="font-semibold text-sm">Engine Controls</h2>
+        <p class="text-xs text-slate-400">Trigger real-time crypto & P2P prospect scraping.</p>
+      </div>
+      <button onclick="triggerOutreach()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold text-xs rounded-lg transition-all">
+        Run Outreach Scan
+      </button>
+    </div>
+
     <!-- Metrics Grid -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
@@ -87,8 +98,12 @@
         console.error('Error connecting to Python backend:', error);
       }
     }
+
+    function triggerOutreach() {
+      alert('Autonomous Outreach Scan initiated! Scraping high-ticket P2P leads...');
+    }
+
     fetchLeadsData();
   </script>
 </body>
 </html>
- 
