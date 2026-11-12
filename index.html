@@ -1,24 +1,221 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Pain & Intent Lead Scanner</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 25px; }
-        .container { max-width: 900px; margin: 0 auto; }
-        h1 { font-size: 1.8rem; color: #38bdf8; margin-bottom: 10px; }
-        p { color: #94a3b8; margin-bottom: 30px; line-height: 1.5; }
-        .btn { background: #0284c7; color: white; border: none; padding: 14px 28px; font-size: 1.05rem; font-weight: bold; border-radius: 8px; cursor: pointer; text-decoration: none; display: inline-block; transition: background 0.2s; }
-        .btn:hover { background: #0369a1; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🔥 Global Pain & Intent Lead Scanner</h1>
-        <p>Click below to instantly scan global networks for people experiencing urgent spreadsheet, data, or automation pain.</p>
-        
-        <a href="/api/scan" class="btn">⚡ Run Live Global Scan Now</a>
-    </div>
-</body>
-</html>
+import io
+import os
+import re
+import time
+import zipfile
+import base64
+from typing import List
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
+from fastapi.responses import JSONResponse
+import pdfplumber
+import pandas as pd
+
+app = FastAPI()
+
+# Simple in-memory rate limiter (per serverless instance)
+RATE_LIMIT_STORE = {}
+MAX_REQUESTS_PER_MINUTE = 15
+
+def check_rate_limit(client_ip: str):
+    now = time.time()
+    window = [t for t in RATE_LIMIT_STORE.get(client_ip, []) if now - t < 60]
+    if len(window) >= MAX_REQUESTS_PER_MINUTE:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again in a minute.")
+    window.append(now)
+    RATE_LIMIT_STORE[client_ip] = window
+
+def sanitize_filename(filename: str) -> str:
+    clean = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+    return clean[:100]
+
+def process_single_pdf(
+    file_bytes: bytes,
+    engine_mode: str,
+    merge_pages: bool,
+    remove_empty: bool,
+    detect_headers: bool
+) -> tuple[bytes, list, int, int]:
+    """
+    Processes PDF bytes in-memory and returns:
+    (excel_bytes, preview_rows, total_rows, sheet_count)
+    """
+    # FE-01: Strict magic-byte header verification
+    if not file_bytes.startswith(b"%PDF"):
+        raise ValueError("Invalid file header. File is not a genuine PDF.")
+
+    all_tables = []
+    
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            if len(pdf.pages) == 0:
+                raise ValueError("PDF contains zero pages.")
+            
+            # Configure extraction settings based on engine mode (FE-04)
+            table_settings = {}
+            if engine_mode == "advanced":
+                # Stricter tolerance & text-based alignment for tricky layouts
+                table_settings = {
+                    "vertical_strategy": "text",
+                    "horizontal_strategy": "text",
+                    "snap_tolerance": 4,
+                }
+
+            for page in pdf.pages:
+                tables = page.extract_tables(table_settings=table_settings)
+                for table in tables:
+                    if not table:
+                        continue
+                    df = pd.DataFrame(table)
+                    
+                    # FE-11: Remove empty rows & columns
+                    if remove_empty:
+                        df.replace(r'^\s*$', pd.NA, regex=True, inplace=True)
+                        df.dropna(how='all', axis=0, inplace=True)
+                        df.dropna(how='all', axis=1, inplace=True)
+                    
+                    if not df.empty:
+                        all_tables.append(df)
+
+    except Exception as e:
+        if "Password" in str(e) or "encrypted" in str(e).lower():
+            raise ValueError("PDF is password-protected. Please unlock it first.")
+        raise ValueError(f"Corrupted or unreadable PDF: {str(e)}")
+
+    if not all_tables:
+        raise ValueError("No tabular data detected in this PDF.")
+
+    # Compile Excel workbook in memory (FE-12: Zero disk retention)
+    excel_buffer = io.BytesIO()
+    preview_rows = []
+    total_rows = 0
+    sheet_count = 0
+
+    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+        if merge_pages:
+            # FE-11: Merge all extracted tables into one clean sheet
+            merged_df = pd.concat(all_tables, ignore_index=True)
+            if detect_headers and len(merged_df) > 1:
+                merged_df.columns = merged_df.iloc[0]
+                merged_df = merged_df[1:].reset_index(drop=True)
+            
+            merged_df.to_excel(writer, sheet_name="Extracted_Data", index=False, header=detect_headers)
+            total_rows = len(merged_df)
+            sheet_count = 1
+            
+            # FE-05: Generate first 10 rows for live preview
+            preview_df = merged_df.head(10).fillna("")
+            if detect_headers:
+                preview_rows.append([str(c) for c in preview_df.columns])
+            for row in preview_df.values.tolist():
+                preview_rows.append([str(cell) for cell in row])
+        else:
+            # Write each extracted table to its own sheet
+            for idx, df in enumerate(all_tables):
+                if detect_headers and len(df) > 1:
+                    df.columns = df.iloc[0]
+                    df = df[1:].reset_index(drop=True)
+                sheet_name = f"Table_{idx + 1}"[:31]
+                df.to_excel(writer, sheet_name=sheet_name, index=False, header=detect_headers)
+                total_rows += len(df)
+                sheet_count += 1
+                
+                if idx == 0:
+                    preview_df = df.head(10).fillna("")
+                    if detect_headers:
+                        preview_rows.append([str(c) for c in preview_df.columns])
+                    for row in preview_df.values.tolist():
+                        preview_rows.append([str(cell) for cell in row])
+
+    excel_buffer.seek(0)
+    return excel_buffer.read(), preview_rows, total_rows, sheet_count
+
+
+@app.post("/api/convert")
+async def convert_pdfs(
+    request: Request,
+    files: List[UploadFile] = File(...),
+    engine_mode: str = Form("standard"),
+    merge_pages: bool = Form(True),
+    remove_empty: bool = Form(True),
+    detect_headers: bool = Form(True),
+    is_pro: bool = Form(False)
+):
+    client_ip = request.client.host if request.client else "unknown"
+    check_rate_limit(client_ip)
+
+    if not files:
+        return JSONResponse(status_code=400, content={"error": "No PDF files uploaded."})
+
+    # FE-10: Enforce batch limit for non-Pro users
+    if len(files) > 1 and not is_pro:
+        return JSONResponse(status_code=403, content={"error": "Batch conversion (multiple files) requires Pro."})
+
+    if len(files) > 10:
+        return JSONResponse(status_code=400, content={"error": "Maximum 10 PDFs allowed per batch."})
+
+    try:
+        # Single File Conversion
+        if len(files) == 1:
+            upload = files[0]
+            safe_name = sanitize_filename(upload.filename or "document.pdf")
+            base_name = os.path.splitext(safe_name)[0]
+            content = await upload.read()
+
+            if len(content) > 25 * 1024 * 1024:
+                return JSONResponse(status_code=400, content={"error": "File exceeds 25 MB limit."})
+
+            xlsx_bytes, preview, rows, sheets = process_single_pdf(
+                content, engine_mode, merge_pages, remove_empty, detect_headers
+            )
+            
+            b64_data = base64.b64encode(xlsx_bytes).decode("utf-8")
+            return {
+                "status": "success",
+                "is_zip": False,
+                "filename": f"{base_name}_converted.xlsx",
+                "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "file_b64": b64_data,
+                "preview": preview,
+                "total_rows": rows,
+                "sheet_count": sheets
+            }
+
+        # FE-10: Multi-File Batch Conversion (.zip)
+        zip_buffer = io.BytesIO()
+        first_preview = []
+        total_batch_rows = 0
+        total_batch_sheets = 0
+
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for idx, upload in enumerate(files):
+                safe_name = sanitize_filename(upload.filename or f"doc_{idx+1}.pdf")
+                base_name = os.path.splitext(safe_name)[0]
+                content = await upload.read()
+
+                xlsx_bytes, preview, rows, sheets = process_single_pdf(
+                    content, engine_mode, merge_pages, remove_empty, detect_headers
+                )
+                zf.writestr(f"{base_name}_converted.xlsx", xlsx_bytes)
+                total_batch_rows += rows
+                total_batch_sheets += sheets
+                if idx == 0:
+                    first_preview = preview
+
+        zip_buffer.seek(0)
+        b64_zip = base64.b64encode(zip_buffer.read()).decode("utf-8")
+
+        return {
+            "status": "success",
+            "is_zip": True,
+            "filename": "PDF2XLS_Batch_Converted.zip",
+            "mime_type": "application/zip",
+            "file_b64": b64_zip,
+            "preview": first_preview,
+            "total_rows": total_batch_rows,
+            "sheet_count": total_batch_sheets
+        }
+
+    except ValueError as ve:
+        return JSONResponse(status_code=422, content={"error": str(ve)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Server processing error: {str(e)}"})
