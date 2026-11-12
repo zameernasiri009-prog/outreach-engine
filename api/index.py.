@@ -54,6 +54,7 @@ def process_single_pdf(
     remove_empty: bool,
     detect_headers: bool
 ):
+    # Lazy load heavy libraries to prevent cold-start crashes
     import pdfplumber
     import pandas as pd
 
@@ -61,33 +62,25 @@ def process_single_pdf(
         raise ValueError("Invalid file header. Not a genuine PDF.")
 
     all_tables = []
-    table_settings = {"vertical_strategy": "text", "horizontal_strategy": "text", "snap_tolerance": 3}
-    if engine_mode == "advanced":
-        table_settings = {"vertical_strategy": "lines", "horizontal_strategy": "lines", "snap_tolerance": 4}
 
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         if len(pdf.pages) == 0:
             raise ValueError("PDF contains zero pages.")
 
         for page in pdf.pages:
-            tables = []
-            try:
-                tables = page.extract_tables(table_settings=table_settings)
-            except Exception:
-                pass
+            page_rows = []
+            
+            # LIGHTNING-FAST SAFE EXTRACTION: Uses pure text lines to prevent hanging/timeouts
+            text = page.extract_text()
+            if text:
+                for line in text.split("\n"):
+                    # Split columns intelligently by multi-spaces or tabs
+                    cols = [c.strip() for c in re.split(r'\s{2,}|\t+', line) if c.strip()]
+                    if cols:
+                        page_rows.append(cols)
 
-            if not tables:
-                text = page.extract_text()
-                if text:
-                    rows_data = [[c.strip() for c in re.split(r'\s{2,}|\t+', line) if c.strip()] for line in text.split("\n")]
-                    rows_data = [r for r in rows_data if r]
-                    if rows_data:
-                        tables = [rows_data]
-
-            for table in tables:
-                if not table:
-                    continue
-                df = pd.DataFrame(table)
+            if page_rows:
+                df = pd.DataFrame(page_rows)
                 if remove_empty:
                     df.replace(r'^\s*$', pd.NA, regex=True, inplace=True)
                     df.dropna(how='all', axis=0, inplace=True)
@@ -96,7 +89,7 @@ def process_single_pdf(
                     all_tables.append(df)
 
     if not all_tables:
-        raise ValueError("No tabular data detected in this PDF.")
+        raise ValueError("No tabular text detected in this PDF.")
 
     excel_buffer = io.BytesIO()
     preview_rows = []
