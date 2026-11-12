@@ -1,0 +1,24 @@
+# lead_engine_core.py
+# Step 1: Cloud-Ready Data Architecture & Pipeline Manager
+
+name: Cloud Intent Scanner Check
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Test Execute Script
+        run: python api/scan.py
