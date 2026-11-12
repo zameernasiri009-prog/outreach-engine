@@ -1,221 +1,534 @@
-import io
-import os
-import re
-import time
-import zipfile
-import base64
-from typing import List
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
-from fastapi.responses import JSONResponse
-import pdfplumber
-import pandas as pd
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF2XLS — Instant PDF to Excel Extractor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js for instant client-side page count inspection (FE-02) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between font-sans antialiased">
 
-app = FastAPI()
+    <!-- Top Navigation & FE-07 Free Quota Counter Badge -->
+    <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-30">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-600/30">
+                    XLS
+                </div>
+                <span class="font-bold text-xl tracking-tight text-white">PDF2XLS</span>
+            </div>
 
-# Simple in-memory rate limiter (per serverless instance)
-RATE_LIMIT_STORE = {}
-MAX_REQUESTS_PER_MINUTE = 15
+            <div class="flex items-center gap-3">
+                <div id="quotaBadge" class="px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all">
+                    Free Conversions Remaining: <span id="quotaCount">2</span> / 2
+                </div>
+                <button onclick="openPaywall()" id="headerUpgradeBtn" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow">
+                    Upgrade Pro
+                </button>
+            </div>
+        </div>
+    </header>
 
-def check_rate_limit(client_ip: str):
-    now = time.time()
-    window = [t for t in RATE_LIMIT_STORE.get(client_ip, []) if now - t < 60]
-    if len(window) >= MAX_REQUESTS_PER_MINUTE:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again in a minute.")
-    window.append(now)
-    RATE_LIMIT_STORE[client_ip] = window
+    <!-- Main Container -->
+    <main class="max-w-3xl w-full mx-auto px-4 py-10 flex-grow">
+        
+        <!-- Hero Section -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-3">
+                Turn Messy PDF Invoices into Clean Excel Sheets
+            </h1>
+            <p class="text-slate-400 text-sm sm:text-base max-w-xl mx-auto">
+                Drop your supplier invoices, bank statements, or reports. Extract structured tables into ready-to-use <code class="text-blue-400">.xlsx</code> spreadsheets in seconds.
+            </p>
+        </div>
 
-def sanitize_filename(filename: str) -> str:
-    clean = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
-    return clean[:100]
+        <!-- FE-09 Error Toast Banner -->
+        <div id="errorBanner" class="hidden mb-6 bg-red-950/80 border border-red-700 text-red-200 px-4 py-3 rounded-xl flex items-center justify-between text-sm">
+            <div class="flex items-center gap-2">
+                <span class="font-bold text-red-400">Error:</span>
+                <span id="errorMessage">Something went wrong.</span>
+            </div>
+            <button onclick="hideError()" class="text-red-400 hover:text-white font-bold ml-4">✕</button>
+        </div>
 
-def process_single_pdf(
-    file_bytes: bytes,
-    engine_mode: str,
-    merge_pages: bool,
-    remove_empty: bool,
-    detect_headers: bool
-) -> tuple[bytes, list, int, int]:
-    """
-    Processes PDF bytes in-memory and returns:
-    (excel_bytes, preview_rows, total_rows, sheet_count)
-    """
-    # FE-01: Strict magic-byte header verification
-    if not file_bytes.startswith(b"%PDF"):
-        raise ValueError("Invalid file header. File is not a genuine PDF.")
-
-    all_tables = []
-    
-    try:
-        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-            if len(pdf.pages) == 0:
-                raise ValueError("PDF contains zero pages.")
+        <!-- Main Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl">
             
-            # Configure extraction settings based on engine mode (FE-04)
-            table_settings = {}
-            if engine_mode == "advanced":
-                # Stricter tolerance & text-based alignment for tricky layouts
-                table_settings = {
-                    "vertical_strategy": "text",
-                    "horizontal_strategy": "text",
-                    "snap_tolerance": 4,
-                }
+            <!-- PHASE 1 & 2: FE-01 Drag-and-Drop Dropzone -->
+            <div id="dropzoneSection">
+                <div id="dropzone" class="border-2 border-dashed border-slate-700 hover:border-blue-500 bg-slate-950/50 rounded-xl p-10 text-center cursor-pointer transition-all">
+                    <input type="file" id="fileInput" accept=".pdf,application/pdf" multiple class="hidden" />
+                    <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-slate-800 flex items-center justify-center text-blue-400">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                    </div>
+                    <p class="text-base font-semibold text-white mb-1">Drag & drop your PDF file here</p>
+                    <p class="text-xs text-slate-400 mb-4">Up to 25 MB per file • Batch up to 10 PDFs on Pro</p>
+                    <button type="button" onclick="triggerFileSelect()" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm px-5 py-2.5 rounded-lg transition">
+                        Choose PDF File
+                    </button>
+                </div>
+            </div>
 
-            for page in pdf.pages:
-                tables = page.extract_tables(table_settings=table_settings)
-                for table in tables:
-                    if not table:
-                        continue
-                    df = pd.DataFrame(table)
-                    
-                    # FE-11: Remove empty rows & columns
-                    if remove_empty:
-                        df.replace(r'^\s*$', pd.NA, regex=True, inplace=True)
-                        df.dropna(how='all', axis=0, inplace=True)
-                        df.dropna(how='all', axis=1, inplace=True)
-                    
-                    if not df.empty:
-                        all_tables.append(df)
-
-    except Exception as e:
-        if "Password" in str(e) or "encrypted" in str(e).lower():
-            raise ValueError("PDF is password-protected. Please unlock it first.")
-        raise ValueError(f"Corrupted or unreadable PDF: {str(e)}")
-
-    if not all_tables:
-        raise ValueError("No tabular data detected in this PDF.")
-
-    # Compile Excel workbook in memory (FE-12: Zero disk retention)
-    excel_buffer = io.BytesIO()
-    preview_rows = []
-    total_rows = 0
-    sheet_count = 0
-
-    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        if merge_pages:
-            # FE-11: Merge all extracted tables into one clean sheet
-            merged_df = pd.concat(all_tables, ignore_index=True)
-            if detect_headers and len(merged_df) > 1:
-                merged_df.columns = merged_df.iloc[0]
-                merged_df = merged_df[1:].reset_index(drop=True)
-            
-            merged_df.to_excel(writer, sheet_name="Extracted_Data", index=False, header=detect_headers)
-            total_rows = len(merged_df)
-            sheet_count = 1
-            
-            # FE-05: Generate first 10 rows for live preview
-            preview_df = merged_df.head(10).fillna("")
-            if detect_headers:
-                preview_rows.append([str(c) for c in preview_df.columns])
-            for row in preview_df.values.tolist():
-                preview_rows.append([str(cell) for cell in row])
-        else:
-            # Write each extracted table to its own sheet
-            for idx, df in enumerate(all_tables):
-                if detect_headers and len(df) > 1:
-                    df.columns = df.iloc[0]
-                    df = df[1:].reset_index(drop=True)
-                sheet_name = f"Table_{idx + 1}"[:31]
-                df.to_excel(writer, sheet_name=sheet_name, index=False, header=detect_headers)
-                total_rows += len(df)
-                sheet_count += 1
+            <!-- PHASE 2: FE-02 File Preview Card & Configuration Options -->
+            <div id="configSection" class="hidden space-y-6">
                 
-                if idx == 0:
-                    preview_df = df.head(10).fillna("")
-                    if detect_headers:
-                        preview_rows.append([str(c) for c in preview_df.columns])
-                    for row in preview_df.values.tolist():
-                        preview_rows.append([str(cell) for cell in row])
+                <!-- File List Container -->
+                <div id="fileList" class="space-y-2.5"></div>
 
-    excel_buffer.seek(0)
-    return excel_buffer.read(), preview_rows, total_rows, sheet_count
+                <!-- FE-04 Engine Selector & FE-11 Data Cleaning Tools -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                            Extraction Engine
+                        </label>
+                        <select id="engineMode" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
+                            <option value="standard">Standard Table Extraction (Fast)</option>
+                            <option value="advanced">Deep Text & Grid Alignment</option>
+                        </select>
+                    </div>
 
+                    <div class="space-y-2.5">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                            Data Cleaning Rules
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="mergePages" checked class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-0" />
+                            Merge multi-page tables
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="removeEmpty" checked class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-0" />
+                            Remove empty rows
+                        </label>
+                        <label class="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="detectHeaders" checked class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-0" />
+                            Detect headers automatically
+                        </label>
+                    </div>
+                </div>
 
-@app.post("/api/convert")
-async def convert_pdfs(
-    request: Request,
-    files: List[UploadFile] = File(...),
-    engine_mode: str = Form("standard"),
-    merge_pages: bool = Form(True),
-    remove_empty: bool = Form(True),
-    detect_headers: bool = Form(True),
-    is_pro: bool = Form(False)
-):
-    client_ip = request.client.host if request.client else "unknown"
-    check_rate_limit(client_ip)
+                <!-- Primary Convert CTA -->
+                <button id="convertBtn" onclick="startConversion()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2">
+                    <span>Convert to Excel</span>
+                </button>
+            </div>
 
-    if not files:
-        return JSONResponse(status_code=400, content={"error": "No PDF files uploaded."})
+            <!-- PHASE 3: FE-03 Real-Time Progress Bar -->
+            <div id="progressSection" class="hidden py-8 text-center space-y-4">
+                <div class="w-12 h-12 mx-auto border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <div>
+                    <p id="progressStatus" class="text-base font-semibold text-white">Uploading secure file stream (15%)...</p>
+                    <p class="text-xs text-slate-400 mt-1">Extracting table coordinates & building workbook</p>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                    <div id="progressBar" class="bg-blue-500 h-2.5 rounded-full transition-all duration-300" style="width: 15%"></div>
+                </div>
+            </div>
 
-    # FE-10: Enforce batch limit for non-Pro users
-    if len(files) > 1 and not is_pro:
-        return JSONResponse(status_code=403, content={"error": "Batch conversion (multiple files) requires Pro."})
+            <!-- PHASE 4: FE-05 Live Preview Table & FE-06 Download Manager -->
+            <div id="resultSection" class="hidden space-y-6">
+                <div class="bg-emerald-950/50 border border-emerald-700/70 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2 text-emerald-400 font-bold text-base">
+                            <span>✓ Conversion Complete</span>
+                        </div>
+                        <p id="resultMeta" class="text-xs text-slate-300 mt-1">
+                            invoice_converted.xlsx • 24 rows detected • 1 sheet
+                        </p>
+                    </div>
+                    <button id="downloadBtn" onclick="triggerDownload()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm px-5 py-2.5 rounded-lg transition shadow-lg shadow-emerald-600/20 shrink-0">
+                        Download Excel Sheet
+                    </button>
+                </div>
 
-    if len(files) > 10:
-        return JSONResponse(status_code=400, content={"error": "Maximum 10 PDFs allowed per batch."})
+                <!-- FE-05 Live Preview Table (First 10 rows) -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Live Data Preview (First 10 Rows)</span>
+                    </div>
+                    <div class="overflow-x-auto border border-slate-800 rounded-xl max-h-64">
+                        <table id="previewTable" class="w-full text-left border-collapse text-xs"></table>
+                    </div>
+                </div>
 
-    try:
-        # Single File Conversion
-        if len(files) == 1:
-            upload = files[0]
-            safe_name = sanitize_filename(upload.filename or "document.pdf")
-            base_name = os.path.splitext(safe_name)[0]
-            content = await upload.read()
+                <div class="flex justify-center pt-2">
+                    <button onclick="resetApp()" class="text-sm text-slate-400 hover:text-white underline">
+                        Convert Another File
+                    </button>
+                </div>
+            </div>
 
-            if len(content) > 25 * 1024 * 1024:
-                return JSONResponse(status_code=400, content={"error": "File exceeds 25 MB limit."})
+        </div>
 
-            xlsx_bytes, preview, rows, sheets = process_single_pdf(
-                content, engine_mode, merge_pages, remove_empty, detect_headers
-            )
+        <!-- FE-12 Auto-Deletion Security Notice -->
+        <p class="text-center text-xs text-slate-500 mt-6 flex items-center justify-center gap-1.5">
+            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            Files are processed strictly in memory and automatically deleted within 1 hour for your privacy.
+        </p>
+    </main>
+
+    <!-- FE-08 Paywall & Upgrade Modal -->
+    <div id="paywallModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-2xl relative">
+            <button onclick="closePaywall()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-lg">✕</button>
             
-            b64_data = base64.b64encode(xlsx_bytes).decode("utf-8")
-            return {
-                "status": "success",
-                "is_zip": False,
-                "filename": f"{base_name}_converted.xlsx",
-                "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_b64": b64_data,
-                "preview": preview,
-                "total_rows": rows,
-                "sheet_count": sheets
-            }
+            <div class="inline-block px-3 py-1 rounded-full bg-blue-600/20 text-blue-400 text-xs font-bold mb-3">
+                UNLIMITED PRO ACCESS
+            </div>
+            <h3 class="text-2xl font-extrabold text-white mb-2">Upgrade to PDF2XLS Pro</h3>
+            <p class="text-sm text-slate-400 mb-5">
+                You've reached your 2 free conversions limit. Unlock unlimited extractions and batch processing immediately.
+            </p>
 
-        # FE-10: Multi-File Batch Conversion (.zip)
-        zip_buffer = io.BytesIO()
-        first_preview = []
-        total_batch_rows = 0
-        total_batch_sheets = 0
+            <ul class="space-y-2.5 text-sm text-slate-300 mb-6">
+                <li class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Unlimited PDF-to-Excel conversions</li>
+                <li class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Batch convert up to 10 PDFs at once (.zip)</li>
+                <li class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Deep layout & multi-page table merging</li>
+                <li class="flex items-center gap-2"><span class="text-emerald-400 font-bold">✓</span> Zero-retention private cloud processing</li>
+            </ul>
 
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for idx, upload in enumerate(files):
-                safe_name = sanitize_filename(upload.filename or f"doc_{idx+1}.pdf")
-                base_name = os.path.splitext(safe_name)[0]
-                content = await upload.read()
+            <!-- Stripe Checkout Redirect -->
+            <a href="https://buy.stripe.com/YOUR_STRIPE_PAYMENT_LINK" target="_blank" class="block w-full text-center bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/30 mb-4">
+                Unlock Unlimited Access — $19/mo
+            </a>
 
-                xlsx_bytes, preview, rows, sheets = process_single_pdf(
-                    content, engine_mode, merge_pages, remove_empty, detect_headers
-                )
-                zf.writestr(f"{base_name}_converted.xlsx", xlsx_bytes)
-                total_batch_rows += rows
-                total_batch_sheets += sheets
-                if idx == 0:
-                    first_preview = preview
+            <!-- Manual License Key Fallback -->
+            <div class="border-t border-slate-800 pt-4">
+                <p class="text-xs text-slate-400 mb-2">Already purchased? Enter your license key:</p>
+                <div class="flex gap-2">
+                    <input type="text" id="licenseInput" placeholder="PRO-XXXX-XXXX" class="flex-grow bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500" />
+                    <button onclick="activateLicense()" class="bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg">
+                        Activate
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        zip_buffer.seek(0)
-        b64_zip = base64.b64encode(zip_buffer.read()).decode("utf-8")
+    <script>
+        // --- State Management (FE-07) ---
+        const MAX_FREE = 2;
+        let selectedFiles = [];
+        let convertedResult = null;
 
-        return {
-            "status": "success",
-            "is_zip": True,
-            "filename": "PDF2XLS_Batch_Converted.zip",
-            "mime_type": "application/zip",
-            "file_b64": b64_zip,
-            "preview": first_preview,
-            "total_rows": total_batch_rows,
-            "sheet_count": total_batch_sheets
+        function getUsedCount() {
+            return parseInt(localStorage.getItem('pdf2xls_used') || '0', 10);
         }
 
-    except ValueError as ve:
-        return JSONResponse(status_code=422, content={"error": str(ve)})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Server processing error: {str(e)}"})
+        function isProUser() {
+            return localStorage.getItem('pdf2xls_pro') === 'true';
+        }
+
+        function checkStripeRedirect() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('pro_unlocked') === 'true') {
+                localStorage.setItem('pdf2xls_pro', 'true');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+
+        function updateQuotaUI() {
+            const badge = document.getElementById('quotaBadge');
+            const upgradeBtn = document.getElementById('headerUpgradeBtn');
+
+            if (isProUser()) {
+                badge.className = "px-3.5 py-1.5 rounded-full text-xs font-semibold border border-emerald-600/50 bg-emerald-950/60 text-emerald-400";
+                badge.innerHTML = "★ PRO UNLIMITED ACTIVE";
+                upgradeBtn.classList.add('hidden');
+                return;
+            }
+
+            const remaining = Math.max(0, MAX_FREE - getUsedCount());
+            if (remaining === 2) {
+                badge.className = "px-3.5 py-1.5 rounded-full text-xs font-semibold border border-emerald-700/50 bg-emerald-950/50 text-emerald-400";
+            } else if (remaining === 1) {
+                badge.className = "px-3.5 py-1.5 rounded-full text-xs font-semibold border border-amber-600/50 bg-amber-950/50 text-amber-400";
+            } else {
+                badge.className = "px-3.5 py-1.5 rounded-full text-xs font-semibold border border-red-600/50 bg-red-950/50 text-red-400";
+            }
+            badge.innerHTML = `Free Conversions Remaining: <span>${remaining}</span> / ${MAX_FREE}`;
+        }
+
+        // --- Error Helpers (FE-09) ---
+        function showError(msg) {
+            document.getElementById('errorMessage').textContent = msg;
+            document.getElementById('errorBanner').classList.remove('hidden');
+        }
+        function hideError() {
+            document.getElementById('errorBanner').classList.add('hidden');
+        }
+
+        // --- Drag & Drop Handlers (FE-01) ---
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-blue-500', 'bg-slate-900');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-blue-500', 'bg-slate-900');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-blue-500', 'bg-slate-900');
+            handleFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function triggerFileSelect() {
+            if (!isProUser() && getUsedCount() >= MAX_FREE) {
+                openPaywall();
+                return;
+            }
+            fileInput.click();
+        }
+
+        async function handleFiles(fileListObj) {
+            hideError();
+            if (!isProUser() && getUsedCount() >= MAX_FREE) {
+                openPaywall();
+                return;
+            }
+
+            const files = Array.from(fileListObj);
+            if (files.length === 0) return;
+
+            if (files.length > 1 && !isProUser()) {
+                showError("Batch conversion (multiple PDFs) is a Pro feature. Please select 1 PDF or upgrade.");
+                openPaywall();
+                return;
+            }
+
+            for (const f of files) {
+                if (!f.name.toLowerCase().endsWith('.pdf')) {
+                    showError(`Invalid file format "${f.name}". Please upload valid PDF documents only.`);
+                    return;
+                }
+                if (f.size > 25 * 1024 * 1024) {
+                    showError(`"${f.name}" exceeds the 25 MB limit.`);
+                    return;
+                }
+            }
+
+            selectedFiles = files;
+            await renderFileCards();
+        }
+
+        // --- File Preview Card & Page Count (FE-02) ---
+        async function renderFileCards() {
+            const container = document.getElementById('fileList');
+            container.innerHTML = '';
+
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const sizeKB = (file.size / 1024).toFixed(1);
+                let pageText = "Inspecting pages...";
+
+                const card = document.createElement('div');
+                card.className = "flex items-center justify-between bg-slate-950 border border-slate-800 p-3.5 rounded-xl";
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <div class="w-10 h-10 rounded-lg bg-red-950/70 border border-red-800/50 text-red-400 flex items-center justify-center font-bold text-xs shrink-0">PDF</div>
+                        <div class="truncate">
+                            <p class="text-sm font-semibold text-white truncate">${file.name}</p>
+                            <p class="text-xs text-slate-400" id="meta_${i}">${sizeKB} KB • ${pageText}</p>
+                        </div>
+                    </div>
+                    <button onclick="removeFile(${i})" class="text-slate-500 hover:text-red-400 font-bold px-2 py-1">✕</button>
+                `;
+                container.appendChild(card);
+
+                // Extract page count via PDF.js
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    document.getElementById(`meta_${i}`).textContent = `${sizeKB} KB • ${pdf.numPages} page(s)`;
+                } catch {
+                    document.getElementById(`meta_${i}`).textContent = `${sizeKB} KB • PDF Document`;
+                }
+            }
+
+            document.getElementById('dropzoneSection').classList.add('hidden');
+            document.getElementById('configSection').classList.remove('hidden');
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            if (selectedFiles.length === 0) {
+                resetApp();
+            } else {
+                renderFileCards();
+            }
+        }
+
+        // --- Conversion & Real-Time Progress (FE-03) ---
+        async function startConversion() {
+            hideError();
+            if (!isProUser() && getUsedCount() >= MAX_FREE) {
+                openPaywall();
+                return;
+            }
+
+            document.getElementById('configSection').classList.add('hidden');
+            document.getElementById('progressSection').classList.remove('hidden');
+
+            const bar = document.getElementById('progressBar');
+            const status = document.getElementById('progressStatus');
+
+            // Smooth milestone progression
+            let progress = 15;
+            bar.style.width = '15%';
+            status.textContent = 'Uploading secure file stream to server (15%)...';
+
+            const timer = setInterval(() => {
+                if (progress < 85) {
+                    progress += 12;
+                    bar.style.width = `${progress}%`;
+                    if (progress < 50) {
+                        status.textContent = `Running layout analysis & grid detection (${progress}%)...`;
+                    } else {
+                        status.textContent = `Compiling clean .xlsx spreadsheet (${progress}%)...`;
+                    }
+                }
+            }, 400);
+
+            const formData = new FormData();
+            selectedFiles.forEach(f => formData.append('files', f));
+            formData.append('engine_mode', document.getElementById('engineMode').value);
+            formData.append('merge_pages', document.getElementById('mergePages').checked);
+            formData.append('remove_empty', document.getElementById('removeEmpty').checked);
+            formData.append('detect_headers', document.getElementById('detectHeaders').checked);
+            formData.append('is_pro', isProUser());
+
+            try {
+                const res = await fetch('/api/convert', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                clearInterval(timer);
+
+                if (!res.ok) {
+                    document.getElementById('progressSection').classList.add('hidden');
+                    document.getElementById('configSection').classList.remove('hidden');
+                    showError(data.error || "Failed to extract tables from PDF.");
+                    return;
+                }
+
+                bar.style.width = '100%';
+                status.textContent = 'Generation complete (100%)!';
+
+                // Decrement free counter
+                if (!isProUser()) {
+                    localStorage.setItem('pdf2xls_used', (getUsedCount() + 1).toString());
+                    updateQuotaUI();
+                }
+
+                convertedResult = data;
+                setTimeout(() => showResults(data), 350);
+
+            } catch (err) {
+                clearInterval(timer);
+                document.getElementById('progressSection').classList.add('hidden');
+                document.getElementById('configSection').classList.remove('hidden');
+                showError("Network timeout or server connection error. Please retry.");
+            }
+        }
+
+        // --- Live Table Preview & Results (FE-05 & FE-06) ---
+        function showResults(data) {
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('resultSection').classList.remove('hidden');
+
+            document.getElementById('resultMeta').textContent = 
+                `${data.filename} • ${data.total_rows} rows extracted • ${data.sheet_count} sheet(s)`;
+
+            const dlBtn = document.getElementById('downloadBtn');
+            dlBtn.textContent = data.is_zip ? "Download Batch (.ZIP)" : "Download Excel Sheet";
+
+            // Render first 10 rows in browser
+            const table = document.getElementById('previewTable');
+            table.innerHTML = '';
+            if (data.preview && data.preview.length > 0) {
+                data.preview.forEach((row, rIdx) => {
+                    const tr = document.createElement('tr');
+                    tr.className = rIdx === 0 ? "bg-slate-800 text-slate-200 font-semibold" : "border-t border-slate-800/80 text-slate-300";
+                    row.forEach(cell => {
+                        const td = document.createElement(rIdx === 0 ? 'th' : 'td');
+                        td.className = "px-3 py-2 whitespace-nowrap max-w-[200px] truncate";
+                        td.textContent = cell;
+                        tr.appendChild(td);
+                    });
+                    table.appendChild(tr);
+                });
+            }
+
+            if (!isProUser() && getUsedCount() >= MAX_FREE) {
+                setTimeout(() => openPaywall(), 1500);
+            }
+        }
+
+        function triggerDownload() {
+            if (!convertedResult) return;
+            const byteCharacters = atob(convertedResult.file_b64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: convertedResult.mime_type });
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = convertedResult.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function resetApp() {
+            selectedFiles = [];
+            convertedResult = null;
+            fileInput.value = '';
+            document.getElementById('configSection').classList.add('hidden');
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('resultSection').classList.add('hidden');
+            document.getElementById('dropzoneSection').classList.remove('hidden');
+        }
+
+        // --- Paywall & License Activation (FE-08) ---
+        function openPaywall() {
+            document.getElementById('paywallModal').classList.remove('hidden');
+        }
+        function closePaywall() {
+            document.getElementById('paywallModal').classList.add('hidden');
+        }
+        function activateLicense() {
+            const key = document.getElementById('licenseInput').value.trim().toUpperCase();
+            if (key.startsWith('PRO-') && key.length >= 8) {
+                localStorage.setItem('pdf2xls_pro', 'true');
+                updateQuotaUI();
+                closePaywall();
+                hideError();
+            } else {
+                alert("Invalid license key format. Use a valid PRO-XXXX key.");
+            }
+        }
+
+        // Init on load
+        checkStripeRedirect();
+        updateQuotaUI();
+    </script>
+</body>
+</html>
