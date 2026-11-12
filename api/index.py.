@@ -7,10 +7,20 @@ import base64
 from typing import List
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
 import pandas as pd
 
 app = FastAPI()
+
+# Fix 1: Prevent browser Network Errors on API calls
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Simple in-memory rate limiter (per serverless instance)
 RATE_LIMIT_STORE = {}
@@ -27,6 +37,20 @@ def check_rate_limit(client_ip: str):
 def sanitize_filename(filename: str) -> str:
     clean = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
     return clean[:100]
+
+# Fix 2: Prevent pandas crashes when PDF tables have empty or duplicate column names
+def make_unique_headers(header_row) -> list:
+    seen = {}
+    unique_cols = []
+    for idx, col in enumerate(header_row):
+        name = str(col).strip() if pd.notna(col) and str(col).strip() else f"Column_{idx + 1}"
+        if name in seen:
+            seen[name] += 1
+            unique_cols.append(f"{name}_{seen[name]}")
+        else:
+            seen[name] = 0
+            unique_cols.append(name)
+    return unique_cols
 
 def process_single_pdf(
     file_bytes: bytes,
@@ -95,7 +119,7 @@ def process_single_pdf(
             # FE-11: Merge all extracted tables into one clean sheet
             merged_df = pd.concat(all_tables, ignore_index=True)
             if detect_headers and len(merged_df) > 1:
-                merged_df.columns = merged_df.iloc[0]
+                merged_df.columns = make_unique_headers(merged_df.iloc[0])
                 merged_df = merged_df[1:].reset_index(drop=True)
             
             merged_df.to_excel(writer, sheet_name="Extracted_Data", index=False, header=detect_headers)
@@ -112,7 +136,7 @@ def process_single_pdf(
             # Write each extracted table to its own sheet
             for idx, df in enumerate(all_tables):
                 if detect_headers and len(df) > 1:
-                    df.columns = df.iloc[0]
+                    df.columns = make_unique_headers(df.iloc[0])
                     df = df[1:].reset_index(drop=True)
                 sheet_name = f"Table_{idx + 1}"[:31]
                 df.to_excel(writer, sheet_name=sheet_name, index=False, header=detect_headers)
@@ -191,6 +215,10 @@ async def convert_pdfs(
                 safe_name = sanitize_filename(upload.filename or f"doc_{idx+1}.pdf")
                 base_name = os.path.splitext(safe_name)[0]
                 content = await upload.read()
+
+                # Fix 3: Enforce file size limit inside batch uploads too
+                if len(content) > 25 * 1024 * 1024:
+                    return JSONResponse(status_code=400, content={"error": f"{safe_name} exceeds 25 MB limit."})
 
                 xlsx_bytes, preview, rows, sheets = process_single_pdf(
                     content, engine_mode, merge_pages, remove_empty, detect_headers
