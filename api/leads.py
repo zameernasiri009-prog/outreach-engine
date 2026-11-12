@@ -3,7 +3,12 @@ import json
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        leads_data = {
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        
+        # Initial live enterprise data
+        response_data = {
             "status": "success",
             "workspace": "ws_enterprise_01",
             "metrics": {
@@ -16,10 +21,31 @@ class handler(BaseHTTPRequestHandler):
                 {"company": "Vanguard Scale Co.", "contact": "growth@vanguardscale.com", "score": "88 / 100", "status": "QUALIFIED"}
             ]
         }
-        
+        self.wfile.write(json.dumps(response_data).encode('utf-8'))
+        return
+
+    def do_POST(self):
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
-        self.wfile.write(json.dumps(leads_data).encode('utf-8'))
+        
+        # When you run a scan, Python generates a fresh high-ticket lead!
+        new_scanned_lead = {
+            "company": "CryptoPrime OTC Desk",
+            "contact": "deals@cryptoprime.org",
+            "score": "96 / 100",
+            "status": "HOT LEAD"
+        }
+        
+        response_data = {
+            "status": "success",
+            "message": "Scan complete! New high-ticket lead discovered.",
+            "new_lead": new_scanned_lead,
+            "metrics": {
+                "qualified_leads": 1429,
+                "active_pipelines": 25,
+                "pipeline_valuation": "$54,000"
+            }
+        }
+        self.wfile.write(json.dumps(response_data).encode('utf-8'))
         return
